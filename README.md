@@ -26,13 +26,12 @@ Il tempo naturale dipende dalla longitudine. All'avvio il quadrante usa:
    in Italia mostra NT+30 invece di NT+15).
 
 **Impostazione** — la riga `NT±x` in basso ha tre zone di tocco invisibili:
-- **centro**: avvia il GPS (alla prima volta chiede il permesso di
-  localizzazione); mostra `GPS...` durante la ricerca, timeout 90 s.
-  Va fatto all'aperto; il valore trovato resta salvato.
-- **sinistra / destra**: regola manualmente la zona NT di ±1°.
+- **sinistra / destra**: regola la zona NT di ∓1°/±1° (salvata in modo persistente);
+- **centro**: reset al meridiano del fuso orario.
 
-Il GPS non parte mai da solo: niente consumo di batteria in background
-(si ferma anche quando lo schermo si spegne).
+Niente GPS: `Geolocation.start()` dentro un watchface manda in crash il
+firmware (riavvio del dispositivo, osservato su ZeppOS 3.x), quindi la
+longitudine si imposta solo manualmente.
 
 ## Build
 

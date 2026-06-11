@@ -1,7 +1,6 @@
 import { createWidget, widget, align, text_style, prop, show_level, event } from '@zos/ui'
 import { getDeviceInfo } from '@zos/device'
-import { queryPermission, requestPermission } from '@zos/app'
-import { Time, Geolocation } from '@zos/sensor'
+import { Time } from '@zos/sensor'
 import { localStorage } from '@zos/storage'
 
 import {
@@ -118,11 +117,6 @@ WatchFace({
     this.longitude = loadLongitude()
     if (this.longitude === null) this.longitude = timezoneLongitude()
 
-    this.geo = null
-    this.gpsActive = false
-    this.gpsTimeout = null
-    this.onGeoChange = null
-
     this.buildDial()
     this.render()
 
@@ -194,7 +188,9 @@ WatchFace({
     })
 
     // Invisible tap zones on the longitude row: left = -1 degree,
-    // right = +1 degree, center = acquire via GPS.
+    // right = +1 degree, center = reset to the timezone meridian.
+    // No GPS: Geolocation.start() inside a watchface hard-crashes the
+    // firmware (device reboot, observed on ZeppOS 3.x).
     const rowY = CY + R * 0.22
     const rowH = R * 0.22
     const mkTap = (x, w, fn) => {
@@ -204,22 +200,18 @@ WatchFace({
       }).addEventListener(event.CLICK_UP, fn)
     }
     mkTap(0, W / 3, () => this.nudgeLongitude(-1))
-    mkTap(W / 3, W / 3, () => this.startGps())
+    mkTap(W / 3, W / 3, () => this.resetLongitude())
     mkTap((2 * W) / 3, W - (2 * W) / 3, () => this.nudgeLongitude(1))
 
-    // Re-render on wake; stop any GPS search when the screen turns off so
-    // it never drains the battery in the background.
+    // Re-render on wake.
     createWidget(widget.WIDGET_DELEGATE, {
       resume_call: () => this.render(),
-      pause_call: () => {
-        if (this.gpsActive) this.stopGps()
-      },
+      pause_call: () => {},
     })
   },
 
-  // Manual NT-zone adjustment, persisted; overrides until the next GPS fix.
+  // Manual NT-zone adjustment, persisted.
   nudgeLongitude(delta) {
-    if (this.gpsActive) this.stopGps()
     let lon = Math.trunc(this.longitude) + delta
     if (lon > 180) lon = 180
     if (lon < -180) lon = -180
@@ -228,66 +220,9 @@ WatchFace({
     this.render()
   },
 
-  // GPS is started only on explicit user tap: runtime permission first
-  // (mandatory since API 3.0, or start() silently never produces a fix).
-  startGps() {
-    if (this.gpsActive) return
-    const perm = 'device:os.geolocation'
-    try {
-      const [status] = queryPermission({ permissions: [perm] })
-      if (status === 2) {
-        this.doStartGps()
-      } else {
-        requestPermission({
-          permissions: [perm],
-          callback: (result) => {
-            if (result && result[0] === 2) this.doStartGps()
-          },
-        })
-      }
-    } catch (e) {
-      // Permission API unavailable: try anyway, stopGps cleans up on failure.
-      this.doStartGps()
-    }
-  },
-
-  doStartGps() {
-    try {
-      if (!this.geo) this.geo = new Geolocation()
-      this.gpsActive = true
-      this.lonText.setProperty(prop.MORE, { text: 'GPS...' })
-      this.gpsTimeout = setTimeout(() => this.stopGps(), 90000)
-      this.onGeoChange = () => {
-        if (this.geo.getStatus && this.geo.getStatus() === 'A') {
-          const lon = this.geo.getLongitude()
-          if (typeof lon === 'number' && !isNaN(lon)) {
-            this.longitude = lon
-            saveLongitude(lon)
-            this.stopGps()
-          }
-        }
-      }
-      this.geo.onChange(this.onGeoChange)
-      this.geo.start()
-    } catch (e) {
-      this.geo = null
-      this.stopGps()
-    }
-  },
-
-  stopGps() {
-    if (this.gpsTimeout) {
-      clearTimeout(this.gpsTimeout)
-      this.gpsTimeout = null
-    }
-    if (this.geo) {
-      try {
-        if (this.onGeoChange) this.geo.offChange(this.onGeoChange)
-        this.geo.stop()
-      } catch (e) {}
-    }
-    this.onGeoChange = null
-    this.gpsActive = false
+  resetLongitude() {
+    this.longitude = timezoneLongitude()
+    saveLongitude(this.longitude)
     this.render()
   },
 
@@ -314,22 +249,13 @@ WatchFace({
       })
     }
 
-    // Texts. The longitude label is owned by the GPS search while active.
+    // Texts.
     this.timeText.setProperty(prop.MORE, { text: formatTime(nd) })
     this.dateText.setProperty(prop.MORE, { text: formatDate(nd) })
-    if (!this.gpsActive) {
-      this.lonText.setProperty(prop.MORE, {
-        text: formatLongitude(nd.effectiveLongitude),
-      })
-    }
+    this.lonText.setProperty(prop.MORE, {
+      text: formatLongitude(nd.effectiveLongitude),
+    })
   },
 
-  onDestroy() {
-    if (this.gpsTimeout) {
-      try { clearTimeout(this.gpsTimeout) } catch (e) {}
-    }
-    if (this.geo) {
-      try { this.geo.stop() } catch (e) {}
-    }
-  },
+  onDestroy() {},
 })
