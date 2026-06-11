@@ -37,9 +37,11 @@ const GOLD_HALF = 6 // degrees of rim on each side of sunrise/sunset
 const NEEDLE_DOTS = 10
 const TICK_COUNT = 24 // one mark per natural hour (15 degrees)
 
-// Day/night whiskers: dotted rays from the hub toward sunrise/sunset and
-// night start/end, plus the solid equinox (east-west) axis, as in the
-// original naturaltime.app dial.
+// Day/night whiskers: dotted rays from the hub toward the sunrise/sunset
+// positions at the two solstices — the fixed seasonal envelope for the
+// current latitude — plus the solid equinox (east-west) axis, as in the
+// original naturaltime.app dial. Today's actual sunrise/sunset are shown
+// by the rim ring, not by the whiskers.
 const WHISKER_DOTS = 7
 const WHISKER_R0 = 0.20 // first dot radius, fraction of R
 const WHISKER_R1 = 0.60 // last dot radius
@@ -79,29 +81,43 @@ function nowUtcMs() {
   return Date.now()
 }
 
-// How far (in natural degrees) night start/end sit beyond sunset/sunrise,
-// for a 12-degree sun depression (nautical twilight). The weather service
-// gives no latitude, so it is derived by inverting the sunrise equation
-// from today's day length and solar declination; around the equinoxes the
-// latitude is indeterminate but the result barely depends on it there.
-function nightDeltaNT(dayMinutes, dayOfYear) {
-  const H = dayMinutes / 8 // half-day hour angle, degrees
+// Latitude is not available on-device (no GPS), so it is derived by
+// inverting the sunrise equation from today's day length and the solar
+// declination. Around the equinoxes the day length barely depends on the
+// latitude, making the inversion indeterminate: there the last good value
+// (persisted in localStorage) is reused; it only changes when traveling.
+const LAT_KEY = 'nt_latitude'
+
+function deriveLatitude(dayMinutes, dayOfYear) {
   const dec = -23.44 * Math.cos((2 * Math.PI * (dayOfYear + 10)) / 365.24)
   const tanDec = Math.tan(dec * RAD)
-  let phi // latitude, degrees
-  if (Math.abs(tanDec) < 0.005) phi = 45
-  else phi = Math.atan(-Math.cos(H * RAD) / tanDec) / RAD
-  if (phi > 66) phi = 66
-  if (phi < -66) phi = -66
-  let c =
-    (Math.sin(-12 * RAD) - Math.sin(phi * RAD) * Math.sin(dec * RAD)) /
-    (Math.cos(phi * RAD) * Math.cos(dec * RAD))
+  if (Math.abs(tanDec) >= 0.05) { // skip ~8 days around each equinox
+    const H = (dayMinutes / 8) * RAD // half-day hour angle
+    let phi = Math.atan(-Math.cos(H) / tanDec) / RAD
+    if (phi > 66) phi = 66
+    if (phi < -66) phi = -66
+    phi = Math.round(phi * 10) / 10
+    try {
+      localStorage.setItem(LAT_KEY, String(phi))
+    } catch (e) {}
+    return phi
+  }
+  try {
+    const v = localStorage.getItem(LAT_KEY, null)
+    if (v !== null && v !== undefined) {
+      const n = parseFloat(v)
+      if (!isNaN(n)) return n
+    }
+  } catch (e) {}
+  return 45
+}
+
+// Half-day arc (degrees) at the given latitude for a solstice declination.
+function solsticeHalfDay(phi, decDeg) {
+  let c = -Math.tan(phi * RAD) * Math.tan(decDeg * RAD)
   if (c < -1) c = -1
   if (c > 1) c = 1
-  let delta = Math.acos(c) / RAD - H
-  if (delta < 3) delta = 3
-  if (delta > 45) delta = 45
-  return delta
+  return Math.acos(c) / RAD
 }
 
 function dayOfYearGregorian() {
@@ -399,10 +415,17 @@ WatchFace({
     this.setArc.setProperty(prop.MORE,
       Object.assign({ color: GOLD_RIM }, arcProps(a2 - GOLD_HALF, a2 + GOLD_HALF)))
 
-    // Whiskers: sunrise, sunset, and night end/start (nautical twilight).
+    // Whiskers: the seasonal envelope — sunrise/sunset at the summer and
+    // winter solstices for the derived latitude (the X is symmetric about
+    // the equinox axis since the two half-day arcs always sum to 180°).
     const dayMins = setMins >= riseMins ? setMins - riseMins : 1440 - riseMins + setMins
-    const delta = nightDeltaNT(dayMins, dayOfYearGregorian())
-    const angles = [a1, a2, a1 - delta, a2 + delta]
+    const phi = deriveLatitude(dayMins, dayOfYearGregorian())
+    const hS = solsticeHalfDay(phi, 23.44)
+    const hW = solsticeHalfDay(phi, -23.44)
+    const angles = [
+      ntToScreen(180 - hS), ntToScreen(180 + hS),
+      ntToScreen(180 - hW), ntToScreen(180 + hW),
+    ]
     for (let w = 0; w < this.whiskers.length; w++) {
       const dots = this.whiskers[w]
       for (let i = 0; i < dots.length; i++) {
