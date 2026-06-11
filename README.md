@@ -7,6 +7,12 @@ data naturale (`anno)luna)giorno`) e fuso NT. Sul bordo, l'anello giorno/notte:
 arco turchese dall'alba al tramonto (dal servizio meteo Zepp, ora civile
 convertita in gradi naturali) con segmenti dorati sui due eventi.
 
+La luna gira sul quadrante staccata dal sole di fase×360° (luna nuova =
+accanto al sole, piena = opposta), con la fase disegnata come falce/disco:
+l'elongazione è calcolata in puro JS (elongazione media + correzioni
+anomalistiche principali, ~0.1 giorni di precisione — il widget di sistema
+`edit_type.MOON` dà solo un'icona, non un valore numerico posizionabile).
+
 Come nell'originale, i "baffi" puntati dal centro sono l'inviluppo
 stagionale: le posizioni di alba e tramonto ai due solstizi per la propria
 latitudine (coppia bassa = solstizio d'estate, coppia alta = inverno), tra

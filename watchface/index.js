@@ -37,6 +37,11 @@ const GOLD_HALF = 6 // degrees of rim on each side of sunrise/sunset
 const NEEDLE_DOTS = 10
 const TICK_COUNT = 24 // one mark per natural hour (15 degrees)
 
+// Moon marker: silver disc + sliding dark disc rendering the phase.
+const MOON_LIT = 0xd9dce6
+const MOON_DARK = 0x3a4050
+const MOON_RAD = 0.055 // fraction of R
+
 // Day/night whiskers: dotted rays from the hub toward the sunrise/sunset
 // positions at the two solstices — the fixed seasonal envelope for the
 // current latitude — plus the solid equinox (east-west) axis, as in the
@@ -79,6 +84,19 @@ function nowUtcMs() {
     if (typeof t === 'number' && t > 0) return t
   } catch (e) {}
   return Date.now()
+}
+
+// Moon phase as a fraction of the synodic cycle (0 = new, 0.5 = full):
+// mean elongation plus the two main anomalistic corrections, accurate to
+// ~0.1 day (validated against the 2000 lunar and 2024 solar eclipses).
+function moonPhase(utcMs) {
+  const d = (utcMs - 946728000000) / 86400000 // days since J2000
+  const D = 297.8501921 + 12.19074912 * d // mean elongation
+  const M = 357.5291092 + 0.98560028 * d // solar mean anomaly
+  const Mp = 134.9633964 + 13.06499295 * d // lunar mean anomaly
+  let e = (D + 6.289 * Math.sin(Mp * RAD) - 1.914 * Math.sin(M * RAD)) % 360
+  if (e < 0) e += 360
+  return e / 360
 }
 
 // Latitude is not available on-device (no GPS), so it is derived by
@@ -283,6 +301,18 @@ WatchFace({
       this.whiskers.push(dots)
     }
 
+    // Moon: trails the sun by phase x 360 natural degrees (new moon = with
+    // the sun, full = opposite), so its dial position is sunNT - phase*360.
+    // Drawn under needle and sun; positioned on every render.
+    this.moonLit = createWidget(widget.CIRCLE, {
+      center_x: CX, center_y: CY, radius: R * MOON_RAD,
+      color: MOON_LIT, show_level: show_level.ONLY_NORMAL,
+    })
+    this.moonShadow = createWidget(widget.CIRCLE, {
+      center_x: CX, center_y: CY, radius: R * MOON_RAD,
+      color: MOON_DARK, show_level: show_level.ONLY_NORMAL,
+    })
+
     // Needle: a tapering trail of dots from hub to the sun (normal only).
     this.needle = []
     for (let i = 0; i < NEEDLE_DOTS; i++) {
@@ -440,12 +470,36 @@ WatchFace({
   },
 
   render() {
-    const nd = computeNaturalDate(nowUtcMs(), this.longitude)
+    const now = nowUtcMs()
+    const nd = computeNaturalDate(now, this.longitude)
     const screen = ntToScreen(nd.time)
     const sunColor = WEEKDAY_COLORS[(nd.dayOfWeek - 1) % 7]
 
-    // Sun position + weekday color.
+    // Moon: position on the dial and phase via the two-circle trick — the
+    // dark disc slides off the lit one as the cycle progresses (lit side
+    // on the right while waxing, on the left while waning).
     const sunR = R * 0.9
+    const p = moonPhase(now)
+    const mp = pointAt(sunR, ntToScreen((nd.time - p * 360 + 360) % 360))
+    const mr = R * MOON_RAD
+    const lit = (1 - Math.cos(2 * Math.PI * p)) / 2 // illuminated fraction
+    this.moonLit.setProperty(prop.MORE, {
+      center_x: mp.x, center_y: mp.y, radius: mr, color: MOON_LIT,
+    })
+    if (lit > 0.97) {
+      // Full moon: park the shadow disc out of sight under the hub.
+      this.moonShadow.setProperty(prop.MORE, {
+        center_x: CX, center_y: CY, radius: R * 0.01, color: MOON_DARK,
+      })
+    } else {
+      const dx = 2 * mr * lit
+      this.moonShadow.setProperty(prop.MORE, {
+        center_x: p < 0.5 ? mp.x - dx : mp.x + dx,
+        center_y: mp.y, radius: mr, color: MOON_DARK,
+      })
+    }
+
+    // Sun position + weekday color.
     const sp = pointAt(sunR, screen)
     this.sun.setProperty(prop.MORE, {
       center_x: sp.x, center_y: sp.y, radius: R * 0.06, color: sunColor,
