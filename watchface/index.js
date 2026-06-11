@@ -1,6 +1,6 @@
 import { createWidget, widget, align, text_style, prop, show_level, event } from '@zos/ui'
 import { getDeviceInfo } from '@zos/device'
-import { Time } from '@zos/sensor'
+import { Time, Weather } from '@zos/sensor'
 import { localStorage } from '@zos/storage'
 
 import {
@@ -25,6 +25,14 @@ const DIM = 0x666150
 const TEXT_MAIN = 0xf2e9d8
 const TEXT_DIM = 0x9a907c
 const BG = 0x000000
+
+// Rim ring: night base, daylight arc, golden sunrise/sunset segments.
+const NIGHT_RIM = 0x232a3a
+const DAY_RIM = 0x36c5d2
+const GOLD_RIM = 0xf2c40f
+const RIM_W = R * 0.055
+const RIM_R = R - RIM_W / 2
+const GOLD_HALF = 6 // degrees of rim on each side of sunrise/sunset
 
 const NEEDLE_DOTS = 10
 const TICK_COUNT = 24 // one mark per natural hour (15 degrees)
@@ -60,6 +68,18 @@ function nowUtcMs() {
     if (typeof t === 'number' && t > 0) return t
   } catch (e) {}
   return Date.now()
+}
+
+// Converts a local civil time-of-day (today) to a UTC epoch, deriving the
+// timezone offset from the sensor's local fields vs its UTC epoch.
+function localCivilToUtcMs(hour, minute) {
+  const y = timeSensor.getFullYear()
+  const mo = timeSensor.getMonth() - 1
+  const d = timeSensor.getDate()
+  const tzOffset =
+    Date.UTC(y, mo, d, timeSensor.getHours(), timeSensor.getMinutes(), timeSensor.getSeconds()) -
+    nowUtcMs()
+  return Date.UTC(y, mo, d, hour, minute) - tzOffset
 }
 
 // ---------------------------------------------------------------------------
@@ -117,10 +137,18 @@ WatchFace({
     this.longitude = loadLongitude()
     if (this.longitude === null) this.longitude = timezoneLongitude()
 
+    this.weather = new Weather()
+    this.sunKey = null
+
     this.buildDial()
     this.render()
+    this.updateSunArcs()
 
     timeSensor.onPerMinute(() => this.render())
+    timeSensor.onPerDay(() => {
+      this.sunKey = null
+      this.updateSunArcs()
+    })
   },
 
   // Static layer (built once) + dynamic widgets we later move/recolor.
@@ -128,6 +156,33 @@ WatchFace({
     // Background.
     createWidget(widget.FILL_RECT, {
       x: 0, y: 0, w: W, h: H, radius: R, color: BG, show_level: BOTH,
+    })
+
+    // Rim ring: night base always visible; day/golden arcs sized once
+    // sunrise/sunset arrive from the weather service (normal mode only).
+    createWidget(widget.ARC_PROGRESS, {
+      center_x: CX, center_y: CY, radius: RIM_R,
+      start_angle: 0, end_angle: 360,
+      color: NIGHT_RIM, line_width: RIM_W,
+      level: 100, corner_flag: 0, show_level: show_level.ONLY_NORMAL,
+    })
+    this.dayArc = createWidget(widget.ARC_PROGRESS, {
+      center_x: CX, center_y: CY, radius: RIM_R,
+      start_angle: 0, end_angle: 0,
+      color: DAY_RIM, line_width: RIM_W,
+      level: 100, corner_flag: 0, show_level: show_level.ONLY_NORMAL,
+    })
+    this.riseArc = createWidget(widget.ARC_PROGRESS, {
+      center_x: CX, center_y: CY, radius: RIM_R,
+      start_angle: 0, end_angle: 0,
+      color: GOLD_RIM, line_width: RIM_W,
+      level: 100, corner_flag: 0, show_level: show_level.ONLY_NORMAL,
+    })
+    this.setArc = createWidget(widget.ARC_PROGRESS, {
+      center_x: CX, center_y: CY, radius: RIM_R,
+      start_angle: 0, end_angle: 0,
+      color: GOLD_RIM, line_width: RIM_W,
+      level: 100, corner_flag: 0, show_level: show_level.ONLY_NORMAL,
     })
 
     // Hour ticks (normal mode only, to keep AOD cheap).
@@ -203,9 +258,12 @@ WatchFace({
     mkTap(W / 3, W / 3, () => this.resetLongitude())
     mkTap((2 * W) / 3, W - (2 * W) / 3, () => this.nudgeLongitude(1))
 
-    // Re-render on wake.
+    // Re-render on wake; weather data may have synced in the meantime.
     createWidget(widget.WIDGET_DELEGATE, {
-      resume_call: () => this.render(),
+      resume_call: () => {
+        this.render()
+        this.updateSunArcs()
+      },
       pause_call: () => {},
     })
   },
@@ -218,12 +276,61 @@ WatchFace({
     this.longitude = lon
     saveLongitude(lon)
     this.render()
+    this.updateSunArcs()
   },
 
   resetLongitude() {
     this.longitude = timezoneLongitude()
     saveLongitude(this.longitude)
     this.render()
+    this.updateSunArcs()
+  },
+
+  // Paints the daylight arc and the golden sunrise/sunset segments on the
+  // rim, converting today's civil sunrise/sunset to natural degrees.
+  updateSunArcs() {
+    let day = null
+    try {
+      // Proven on device as getForecast(); typings say getForecastWeather().
+      const fc = this.weather.getForecast
+        ? this.weather.getForecast()
+        : this.weather.getForecastWeather()
+      const td = fc && fc.tideData
+      if (td && td.count) {
+        const d0 = td.data[0]
+        if (d0 && d0.sunrise && d0.sunset) day = d0
+      }
+    } catch (e) {}
+    if (!day) return
+
+    const key =
+      day.sunrise.hour * 60 + day.sunrise.minute + '/' +
+      (day.sunset.hour * 60 + day.sunset.minute) + '/' +
+      Math.trunc(this.longitude)
+    if (key === this.sunKey) return
+    this.sunKey = key
+
+    const riseNT = computeNaturalDate(
+      localCivilToUtcMs(day.sunrise.hour, day.sunrise.minute), this.longitude).time
+    const setNT = computeNaturalDate(
+      localCivilToUtcMs(day.sunset.hour, day.sunset.minute), this.longitude).time
+
+    const a1 = ntToScreen(riseNT)
+    let a2 = ntToScreen(setNT)
+    if (a2 <= a1) a2 += 360
+
+    const arcProps = (start, end) => ({
+      center_x: CX, center_y: CY, radius: RIM_R,
+      start_angle: start, end_angle: end,
+      line_width: RIM_W, level: 100, corner_flag: 0,
+      show_level: show_level.ONLY_NORMAL,
+    })
+    this.dayArc.setProperty(prop.MORE,
+      Object.assign({ color: DAY_RIM }, arcProps(a1, a2)))
+    this.riseArc.setProperty(prop.MORE,
+      Object.assign({ color: GOLD_RIM }, arcProps(a1 - GOLD_HALF, a1 + GOLD_HALF)))
+    this.setArc.setProperty(prop.MORE,
+      Object.assign({ color: GOLD_RIM }, arcProps(a2 - GOLD_HALF, a2 + GOLD_HALF)))
   },
 
   render() {

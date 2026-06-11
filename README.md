@@ -3,7 +3,9 @@
 Quadrante analogico a 360° basato su [natural-time](https://github.com/sylvain441/natural-time):
 il "sole" compie un giro al giorno (mezzanotte in basso, mezzogiorno in alto),
 colorato secondo il giorno della settimana naturale. Al centro: gradi naturali,
-data naturale (`anno)luna)giorno`) e fuso NT.
+data naturale (`anno)luna)giorno`) e fuso NT. Sul bordo, l'anello giorno/notte:
+arco turchese dall'alba al tramonto (dal servizio meteo Zepp, ora civile
+convertita in gradi naturali) con segmenti dorati sui due eventi.
 
 Il motore (`utils/natural-time.js`) è un port senza dipendenze di
 natural-time-js: la ricerca del solstizio di dicembre è sostituita da una
