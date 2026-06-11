@@ -476,9 +476,10 @@ WatchFace({
     const sunColor = WEEKDAY_COLORS[(nd.dayOfWeek - 1) % 7]
 
     // Moon: position on the dial and phase via the two-circle trick — the
-    // dark disc slides off the lit one as the cycle progresses (lit side
-    // on the right while waxing, on the left while waning).
+    // dark disc slides off the lit one away from the sun, so the lit side
+    // always faces the sun marker, as in the sky (and in the official app).
     const sunR = R * 0.9
+    const sp = pointAt(sunR, screen)
     const p = moonPhase(now)
     const mp = pointAt(sunR, ntToScreen((nd.time - p * 360 + 360) % 360))
     const mr = R * MOON_RAD
@@ -492,15 +493,18 @@ WatchFace({
         center_x: CX, center_y: CY, radius: R * 0.01, color: MOON_DARK,
       })
     } else {
-      const dx = 2 * mr * lit
+      const dxs = sp.x - mp.x
+      const dys = sp.y - mp.y
+      const dist = Math.sqrt(dxs * dxs + dys * dys) || 1
+      const off = 2 * mr * lit
       this.moonShadow.setProperty(prop.MORE, {
-        center_x: p < 0.5 ? mp.x - dx : mp.x + dx,
-        center_y: mp.y, radius: mr, color: MOON_DARK,
+        center_x: mp.x - (dxs / dist) * off,
+        center_y: mp.y - (dys / dist) * off,
+        radius: mr, color: MOON_DARK,
       })
     }
 
     // Sun position + weekday color.
-    const sp = pointAt(sunR, screen)
     this.sun.setProperty(prop.MORE, {
       center_x: sp.x, center_y: sp.y, radius: R * 0.06, color: sunColor,
     })
