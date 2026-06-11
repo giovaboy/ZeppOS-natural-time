@@ -7,6 +7,12 @@ data naturale (`anno)luna)giorno`) e fuso NT. Sul bordo, l'anello giorno/notte:
 arco turchese dall'alba al tramonto (dal servizio meteo Zepp, ora civile
 convertita in gradi naturali) con segmenti dorati sui due eventi.
 
+Come nell'originale, i "baffi" puntati dal centro indicano alba, tramonto e
+inizio/fine della notte (crepuscolo nautico, sole a −12°: la latitudine non è
+disponibile, quindi viene derivata invertendo l'equazione dell'alba dalla
+durata del giorno e dalla declinazione solare). La linea orizzontale fissa è
+l'asse degli equinozi (alba a est = 90° NT, tramonto a ovest = 270° NT).
+
 Il motore (`utils/natural-time.js`) è un port senza dipendenze di
 natural-time-js: la ricerca del solstizio di dicembre è sostituita da una
 tabella precalcolata (2012–2055), validata byte-identical contro la libreria
