@@ -10,6 +10,7 @@ import {
   formatLongitude,
   WEEKDAY_COLORS,
 } from '../utils/natural-time'
+import { backgrounds } from './backgrounds'
 
 // ---------------------------------------------------------------------------
 // Geometry helpers
@@ -34,8 +35,17 @@ const RIM_W = R * 0.055
 const RIM_R = R - RIM_W / 2
 const GOLD_HALF = 6 // degrees of rim on each side of sunrise/sunset
 
-const NEEDLE_DOTS = 10
 const TICK_COUNT = 24 // one mark per natural hour (15 degrees)
+
+// Needle styles, selectable in the watchface editor. Custom edit types
+// live in the developer range 0x186a0+. Hand images exist in the 7
+// weekday colors per style (hands/<style>_<dayOfWeek>.png); their pixel
+// sizes match the formulas in tools/gen_assets.py.
+const STYLE_BASE = 0x186a0
+const STYLE_THIN = STYLE_BASE + 1
+const STYLE_SOLID = STYLE_BASE + 2
+const BG_EDIT_ID = 101
+const STYLE_EDIT_ID = 120
 
 // Moon marker: silver disc + sliding dark disc rendering the phase.
 const MOON_LIT = 0xd9dce6
@@ -231,9 +241,20 @@ WatchFace({
 
   // Static layer (built once) + dynamic widgets we later move/recolor.
   buildDial() {
-    // Background.
+    // Background: black fill for AOD, editable image on top in normal mode.
     createWidget(widget.FILL_RECT, {
       x: 0, y: 0, w: W, h: H, radius: R, color: BG, show_level: BOTH,
+    })
+    createWidget(widget.WATCHFACE_EDIT_BG, {
+      edit_id: BG_EDIT_ID,
+      x: 0, y: 0,
+      show_level: show_level.ONLY_NORMAL | show_level.ONLY_EDIT,
+      bg_config: backgrounds,
+      count: backgrounds.length,
+      default_id: 0,
+      fg: 'mask/fg_x.png',
+      tips_x: Math.round(CX - 62), tips_y: Math.round(H * 0.04),
+      tips_bg: 'mask/tips.png',
     })
 
     // Rim ring: night base always visible; day/golden arcs sized once
@@ -313,16 +334,41 @@ WatchFace({
       color: MOON_DARK, show_level: show_level.ONLY_NORMAL,
     })
 
-    // Needle: a tapering trail of dots from hub to the sun (normal only).
-    this.needle = []
-    for (let i = 0; i < NEEDLE_DOTS; i++) {
-      this.needle.push(
-        createWidget(widget.CIRCLE, {
-          center_x: CX, center_y: CY, radius: R * 0.012,
-          color: SUN_COLOR, show_level: show_level.ONLY_NORMAL,
-        }),
-      )
-    }
+    // Needle style selector (editor only) + the image hand, rotated around
+    // the hub; the src swaps daily to follow the weekday color.
+    this.styleGroup = createWidget(widget.WATCHFACE_EDIT_GROUP, {
+      edit_id: STYLE_EDIT_ID,
+      x: CX - 46, y: CY + Math.round(R * 0.45), w: 92, h: 92,
+      select_image: 'mask/select.png',
+      un_select_image: 'mask/select.png',
+      default_type: STYLE_THIN,
+      optional_types: [
+        { type: STYLE_THIN, preview: 'stylesel/style_thin.png',
+          title_en: 'Thin', title_sc: 'Thin', title_tc: 'Thin' },
+        { type: STYLE_SOLID, preview: 'stylesel/style_solid.png',
+          title_en: 'Solid', title_sc: 'Solid', title_tc: 'Solid' },
+      ],
+      count: 2,
+      tips_BG: 'mask/tips.png', tips_x: -16, tips_y: -40, tips_width: 124,
+    })
+    let style = STYLE_THIN
+    try {
+      if (this.styleGroup.getProperty(prop.CURRENT_TYPE) === STYLE_SOLID) {
+        style = STYLE_SOLID
+      }
+    } catch (e) {}
+    this.handPrefix = style === STYLE_SOLID ? 'hands/solid_' : 'hands/thin_'
+    const handW = style === STYLE_SOLID
+      ? Math.round(W * 0.0275)
+      : Math.max(4, Math.round(W * 0.011))
+    const handLen = Math.round(R * 0.86)
+    this.hand = createWidget(widget.IMG, {
+      x: 0, y: 0, w: W, h: H,
+      pos_x: Math.round(CX - handW / 2), pos_y: Math.round(CY - handLen),
+      center_x: CX, center_y: CY, angle: 0,
+      src: this.handPrefix + '1.png',
+      show_level: show_level.ONLY_NORMAL,
+    })
 
     // The sun marker itself (shown in AOD too).
     this.sun = createWidget(widget.CIRCLE, {
@@ -509,16 +555,11 @@ WatchFace({
       center_x: sp.x, center_y: sp.y, radius: R * 0.06, color: sunColor,
     })
 
-    // Needle trail: hub -> sun, tapering thickness.
-    for (let i = 0; i < this.needle.length; i++) {
-      const t = (i + 1) / (this.needle.length + 1)
-      const p = pointAt(sunR * t, screen)
-      this.needle[i].setProperty(prop.MORE, {
-        center_x: p.x, center_y: p.y,
-        radius: R * (0.012 + 0.018 * t),
-        color: sunColor,
-      })
-    }
+    // Needle: rotate to the sun, follow the weekday color via image swap.
+    this.hand.setProperty(prop.MORE, {
+      angle: screen,
+      src: this.handPrefix + nd.dayOfWeek + '.png',
+    })
 
     // Texts.
     this.timeText.setProperty(prop.MORE, { text: formatTime(nd) })

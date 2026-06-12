@@ -5,8 +5,8 @@
     "appName": "Natural Time",
     "appType": "watchface",
     "version": {
-      "code": 8,
-      "name": "1.5.1"
+      "code": 9,
+      "name": "1.6.0"
     },
     "icon": "icon.png",
     "vender": "giova",
@@ -29,7 +29,7 @@
         "watchface": {
           "path": "watchface/index",
           "main": 1,
-          "editable": 0,
+          "editable": 1,
           "lockscreen": 1,
           "hightCost": 0
         }
@@ -42,7 +42,7 @@
         "watchface": {
           "path": "watchface/index",
           "main": 1,
-          "editable": 0,
+          "editable": 1,
           "lockscreen": 1,
           "hightCost": 0
         }
@@ -77,7 +77,7 @@
         "watchface": {
           "path": "watchface/index",
           "main": 1,
-          "editable": 0,
+          "editable": 1,
           "lockscreen": 1,
           "hightCost": 0
         }
@@ -99,7 +99,7 @@
         "watchface": {
           "path": "watchface/index",
           "main": 1,
-          "editable": 0,
+          "editable": 1,
           "lockscreen": 1,
           "hightCost": 0
         }
@@ -117,7 +117,7 @@
         "watchface": {
           "path": "watchface/index",
           "main": 1,
-          "editable": 0,
+          "editable": 1,
           "lockscreen": 1,
           "hightCost": 0
         }

@@ -35,6 +35,14 @@ originale.
 - `utils/natural-time.js` — motore di calcolo (puro JS, testabile con Node)
 - `assets/<target>/icon.png` — icona per ogni target
 
+## Personalizzazione (long-press sul quadrante)
+
+- **Lancetta**: sottile (default) o piena — sempre nei 7 colori della
+  settimana naturale (immagini per-target in `assets/<t>/hands/`).
+- **Sfondo**: Nero, Nero con i gradi naturali ai punti cardinali
+  (0 in basso, 90 a sinistra, 180 in alto, 270 a destra), Notte, Cosmo,
+  Antracite. Tutti generabili con `python3 tools/gen_assets.py`.
+
 ## Longitudine
 
 Il tempo naturale dipende dalla longitudine. All'avvio il quadrante usa:
