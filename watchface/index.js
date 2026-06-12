@@ -32,7 +32,7 @@ const DAY_RIM = 0x36c5d2
 const GOLD_RIM = 0xf2c40f
 const RIM_W = R * 0.055
 const RIM_R = R - RIM_W / 2
-const GOLD_HALF = 6 // degrees of rim on each side of sunrise/sunset
+const GOLD_HALF = 3 // degrees of rim on each side of sunrise/sunset
 
 const TICK_COUNT = 24 // one mark per natural hour (15 degrees)
 
@@ -45,22 +45,13 @@ const STYLE_SOLID = STYLE_BASE + 2
 const STYLE_ORIG = STYLE_BASE + 3
 
 // Per-style hand geometry; pixel formulas mirror tools/gen_assets.py.
+// Hub disc and tail are baked into each png: image width = hub diameter,
+// rotation anchor (hub center) at y = length from the image top.
+const HUB_R = () => Math.round(R * 0.03)
 const HAND_STYLES = {
-  [STYLE_THIN]: {
-    src: 'hands/thin.png',
-    width: () => Math.max(4, Math.round(W * 0.011)),
-    length: () => Math.round(R * 0.86),
-  },
-  [STYLE_SOLID]: {
-    src: 'hands/solid.png',
-    width: () => Math.round(W * 0.0275),
-    length: () => Math.round(R * 0.86),
-  },
-  [STYLE_ORIG]: {
-    src: 'hands/original.png',
-    width: () => Math.round(W * 0.025),
-    length: () => Math.round(R * 0.62),
-  },
+  [STYLE_THIN]: { src: 'hands/thin.png', length: () => Math.round(R * 0.86) },
+  [STYLE_SOLID]: { src: 'hands/solid.png', length: () => Math.round(R * 0.86) },
+  [STYLE_ORIG]: { src: 'hands/original.png', length: () => Math.round(R * 0.62) },
 }
 const BG_EDIT_ID = 101
 const STYLE_EDIT_ID = 120
@@ -356,9 +347,9 @@ WatchFace({
     // the hub; the src swaps daily to follow the weekday color.
     this.styleGroup = createWidget(widget.WATCHFACE_EDIT_GROUP, {
       edit_id: STYLE_EDIT_ID,
-      x: CX - 46, y: CY + Math.round(R * 0.45), w: 92, h: 92,
-      select_image: 'mask/select.png',
-      un_select_image: 'mask/select.png',
+      x: 0, y: 0, w: W, h: H,
+      select_image: 'stylesel/select_screen.png',
+      un_select_image: 'stylesel/select_screen.png',
       default_type: STYLE_THIN,
       optional_types: [
         { type: STYLE_THIN, preview: 'stylesel/style_thin.png',
@@ -369,18 +360,20 @@ WatchFace({
           title_en: 'White', title_sc: 'White', title_tc: 'White' },
       ],
       count: 3,
-      tips_BG: 'mask/tips.png', tips_x: -16, tips_y: -40, tips_width: 124,
+      tips_BG: 'mask/tips.png',
+      tips_x: Math.round(CX - 62), tips_y: Math.round(H * 0.8),
+      tips_width: 124,
     })
     let style = STYLE_THIN
     try {
       const t = this.styleGroup.getProperty(prop.CURRENT_TYPE)
       if (HAND_STYLES[t]) style = t
     } catch (e) {}
-    // Compact square rotation area centered on the hub, image anchored
-    // with its bottom at the area center — the exact geometry proven by
-    // the rotated sun-arc dot in Textwatch Italiano.
+    // Compact square rotation area centered on the hub — the geometry
+    // proven by the rotated sun-arc dot in Textwatch Italiano. The image
+    // is hub-diameter wide and extends below the anchor by its baked tail.
     const conf = HAND_STYLES[style]
-    const handW = conf.width()
+    const handW = HUB_R() * 2
     const handLen = conf.length()
     this.hand = createWidget(widget.IMG, {
       x: Math.round(CX - handLen), y: Math.round(CY - handLen),
@@ -398,10 +391,11 @@ WatchFace({
       color: SUN_COLOR, show_level: BOTH,
     })
 
-    // Central hub.
+    // Central hub: AOD only — in normal mode it is baked into the hand
+    // png, so it always matches the hand color.
     createWidget(widget.CIRCLE, {
       center_x: CX, center_y: CY, radius: R * 0.03,
-      color: SUN_COLOR, show_level: BOTH,
+      color: SUN_COLOR, show_level: show_level.ONAL_AOD,
     })
 
     // Center readout: time degrees (big), date, longitude.

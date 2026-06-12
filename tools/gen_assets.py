@@ -103,8 +103,10 @@ def gen_backgrounds(res):
     }
 
 
-def hand_width(res, style):
-    # Must match the runtime formulas in watchface/index.js.
+WHITE = (255, 255, 255, 255)
+
+
+def hand_bar_width(res, style):
     if style == 'thin':
         return max(4, round(res * 0.011))
     if style == 'original':
@@ -113,58 +115,101 @@ def hand_width(res, style):
 
 
 def hand_length(res, style):
-    # Must match the runtime formulas in watchface/index.js.
+    # Hub center -> tip. Must match the runtime formulas in index.js.
     if style == 'original':
         return round(res / 2 * 0.62)
     return round(res / 2 * 0.86)
 
 
+def hub_radius(res):
+    # Must match the runtime formula in index.js (image width = 2 * this).
+    return round(res / 2 * 0.03)
+
+
+def hand_tail(res, style):
+    # How far the hand continues past the hub center.
+    if style == 'original':
+        return round(res / 2 * 0.09)
+    return hub_radius(res)
+
+
+def hand_color(style):
+    return WHITE if style == 'original' else SUN
+
+
 def gen_hand(res, style):
-    """Hand pointing up; anchor at bottom center of the image."""
+    """Hand pointing up, hub disc baked in; the rotation anchor (hub
+    center) sits at y = hand_length from the image top."""
     length = hand_length(res, style)
-    w = hand_width(res, style)
-    W, H = w * SS, length * SS
+    barw = hand_bar_width(res, style)
+    hubr = hub_radius(res)
+    tail = hand_tail(res, style)
+    imgw = 2 * hubr
+    imgh = length + tail
+    W, H = imgw * SS, imgh * SS
     im = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
+    c = hand_color(style)
+    cx = W / 2
+    ay = length * SS  # anchor (hub center)
+    bw = barw * SS
     if style == 'solid':
-        tip = max(SS * 2, round(W * 0.3))
-        d.polygon(
-            [((W - tip) / 2, 0), ((W + tip) / 2, 0), (W, H), (0, H)], fill=SUN)
-        d.ellipse([(W - tip) / 2, 0, (W + tip) / 2, tip], fill=SUN)
+        tip = max(SS * 2, round(bw * 0.3))
+        d.polygon([(cx - tip / 2, 0), (cx + tip / 2, 0),
+                   (cx + bw / 2, ay), (cx - bw / 2, ay)], fill=c)
+        d.ellipse([cx - tip / 2, 0, cx + tip / 2, tip], fill=c)
     elif style == 'original':
-        # Uniform white bar with rounded caps, like naturaltime.app.
-        d.rounded_rectangle([0, 0, W - 1, H - 1], radius=W / 2,
-                            fill=(255, 255, 255, 255))
+        # Uniform white bar with rounded caps, continuing past the hub.
+        d.rounded_rectangle([cx - bw / 2, 0, cx + bw / 2, H - 1],
+                            radius=bw / 2, fill=c)
     else:
-        d.rectangle([0, 0, W - 1, H - 1], fill=SUN)
-        r = W * 1.6
-        d.ellipse([W / 2 - r, 0, W / 2 + r, 2 * r], fill=SUN)  # round tip dot
-    return im.resize((w, length), Image.LANCZOS)
+        d.rectangle([cx - bw / 2, 0, cx + bw / 2, ay], fill=c)
+        r = bw * 1.6
+        d.ellipse([cx - r, 0, cx + r, 2 * r], fill=c)  # round tip dot
+    hr = hubr * SS
+    d.ellipse([cx - hr, ay - hr, cx + hr, ay + hr], fill=c)
+    return im.resize((imgw, imgh), Image.LANCZOS)
 
 
-def gen_style_preview(kind):
-    """92x92 tile for the style selector carousel."""
-    s = 92 * SS
-    im = Image.new('RGBA', (s, s), (12, 12, 14, 255))
+def gen_style_preview(res, kind):
+    """Full-resolution 'real' preview for the style selector: the hand
+    exactly as rendered on the dial (size, color, baked hub), at 45°."""
+    s = res * SS
+    im = Image.new('RGBA', (s, s), (10, 10, 12, 255))
     d = ImageDraw.Draw(im)
     cx = cy = s / 2
-    if kind == 'original':
-        tipx, tipy = point_at(cx, cy, cx * 0.6, 50)
-        d.line([cx, cy, tipx, tipy], fill=(255, 255, 255, 255),
-               width=round(s * 0.06), joint='curve')
-        r = s * 0.05
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 255, 255, 255))
-        return im.resize((92, 92), Image.LANCZOS)
-    tipx, tipy = point_at(cx, cy, cx * 0.8, 50)
+    length = hand_length(res, kind) * SS
+    bw = hand_bar_width(res, kind) * SS
+    hr = hub_radius(res) * SS
+    c = hand_color(kind)
+    ang = math.radians(45)
+    sin, cos = math.sin(ang), math.cos(ang)
+    tipx, tipy = cx + length * sin, cy - length * cos
     if kind == 'solid':
-        d.line([cx, cy, tipx, tipy], fill=SUN, width=round(s * 0.07))
-    else:  # thin
-        d.line([cx, cy, tipx, tipy], fill=SUN, width=round(s * 0.025))
-    r = s * 0.06
-    d.ellipse([tipx - r, tipy - r, tipx + r, tipy + r], fill=SUN)
-    r = s * 0.05
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=SUN)
-    return im.resize((92, 92), Image.LANCZOS)
+        d.line([cx, cy, tipx, tipy], fill=c, width=round(bw))
+    elif kind == 'original':
+        tail = hand_tail(res, kind) * SS
+        tx, ty = cx - tail * sin, cy + tail * cos
+        d.line([tx, ty, tipx, tipy], fill=c, width=round(bw))
+        for px_, py_ in ((tipx, tipy), (tx, ty)):
+            d.ellipse([px_ - bw / 2, py_ - bw / 2,
+                       px_ + bw / 2, py_ + bw / 2], fill=c)
+    else:
+        d.line([cx, cy, tipx, tipy], fill=c, width=round(bw))
+        r = bw * 1.6
+        d.ellipse([tipx - r, tipy - r, tipx + r, tipy + r], fill=c)
+    d.ellipse([cx - hr, cy - hr, cx + hr, cy + hr], fill=c)
+    return im.resize((res, res), Image.LANCZOS)
+
+
+def gen_select_screen(res):
+    """Full-screen selection marker for the style edit zone: a subtle ring."""
+    s = res * SS
+    im = Image.new('RGBA', (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    w = round(res / 2 * 0.012) * SS or SS
+    d.ellipse([w, w, s - w, s - w], outline=(154, 144, 124, 220), width=w)
+    return im.resize((res, res), Image.LANCZOS)
 
 
 def gen_fg(res):
@@ -211,14 +256,15 @@ def main():
                 os.path.join(base, 'hands', f'{style}.png'))
 
         for kind in ('thin', 'solid', 'original'):
-            gen_style_preview(kind).save(
+            gen_style_preview(res, kind).save(
                 os.path.join(base, 'stylesel', f'style_{kind}.png'))
+        gen_select_screen(res).save(
+            os.path.join(base, 'stylesel', 'select_screen.png'))
 
         gen_fg(res).save(os.path.join(base, 'mask', 'fg_x.png'))
 
-        for mask in ('select.png', 'tips.png'):
-            shutil.copy(os.path.join(ITALIANO_ASSETS, 'mask', mask),
-                        os.path.join(base, 'mask', mask))
+        shutil.copy(os.path.join(ITALIANO_ASSETS, 'mask', 'tips.png'),
+                    os.path.join(base, 'mask', 'tips.png'))
         print(f'{target}: done ({res}px)')
 
 
