@@ -107,27 +107,38 @@ def hand_width(res, style):
     # Must match the runtime formulas in watchface/index.js.
     if style == 'thin':
         return max(4, round(res * 0.011))
+    if style == 'original':
+        return round(res * 0.025)
     return round(res * 0.0275)
 
 
+def hand_length(res, style):
+    # Must match the runtime formulas in watchface/index.js.
+    if style == 'original':
+        return round(res / 2 * 0.62)
+    return round(res / 2 * 0.86)
+
+
 def gen_hand(res, style):
-    """Hand pointing up; height = round(R*0.86), anchor at bottom center."""
-    R = res / 2
-    length = round(R * 0.86)
+    """Hand pointing up; anchor at bottom center of the image."""
+    length = hand_length(res, style)
     w = hand_width(res, style)
     W, H = w * SS, length * SS
     im = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    c = SUN
     if style == 'solid':
         tip = max(SS * 2, round(W * 0.3))
         d.polygon(
-            [((W - tip) / 2, 0), ((W + tip) / 2, 0), (W, H), (0, H)], fill=c)
-        d.ellipse([(W - tip) / 2, 0, (W + tip) / 2, tip], fill=c)
+            [((W - tip) / 2, 0), ((W + tip) / 2, 0), (W, H), (0, H)], fill=SUN)
+        d.ellipse([(W - tip) / 2, 0, (W + tip) / 2, tip], fill=SUN)
+    elif style == 'original':
+        # Uniform white bar with rounded caps, like naturaltime.app.
+        d.rounded_rectangle([0, 0, W - 1, H - 1], radius=W / 2,
+                            fill=(255, 255, 255, 255))
     else:
-        d.rectangle([0, 0, W - 1, H - 1], fill=c)
+        d.rectangle([0, 0, W - 1, H - 1], fill=SUN)
         r = W * 1.6
-        d.ellipse([W / 2 - r, 0, W / 2 + r, 2 * r], fill=c)  # round tip dot
+        d.ellipse([W / 2 - r, 0, W / 2 + r, 2 * r], fill=SUN)  # round tip dot
     return im.resize((w, length), Image.LANCZOS)
 
 
@@ -137,6 +148,13 @@ def gen_style_preview(kind):
     im = Image.new('RGBA', (s, s), (12, 12, 14, 255))
     d = ImageDraw.Draw(im)
     cx = cy = s / 2
+    if kind == 'original':
+        tipx, tipy = point_at(cx, cy, cx * 0.6, 50)
+        d.line([cx, cy, tipx, tipy], fill=(255, 255, 255, 255),
+               width=round(s * 0.06), joint='curve')
+        r = s * 0.05
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 255, 255, 255))
+        return im.resize((92, 92), Image.LANCZOS)
     tipx, tipy = point_at(cx, cy, cx * 0.8, 50)
     if kind == 'solid':
         d.line([cx, cy, tipx, tipy], fill=SUN, width=round(s * 0.07))
@@ -188,11 +206,11 @@ def main():
         for name, im in gen_backgrounds(res).items():
             im.save(os.path.join(base, 'bg', name))
 
-        for style in ('thin', 'solid'):
+        for style in ('thin', 'solid', 'original'):
             gen_hand(res, style).save(
                 os.path.join(base, 'hands', f'{style}.png'))
 
-        for kind in ('thin', 'solid'):
+        for kind in ('thin', 'solid', 'original'):
             gen_style_preview(kind).save(
                 os.path.join(base, 'stylesel', f'style_{kind}.png'))
 

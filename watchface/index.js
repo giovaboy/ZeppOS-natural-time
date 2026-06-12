@@ -42,6 +42,26 @@ const TICK_COUNT = 24 // one mark per natural hour (15 degrees)
 const STYLE_BASE = 0x186a0
 const STYLE_THIN = STYLE_BASE + 1
 const STYLE_SOLID = STYLE_BASE + 2
+const STYLE_ORIG = STYLE_BASE + 3
+
+// Per-style hand geometry; pixel formulas mirror tools/gen_assets.py.
+const HAND_STYLES = {
+  [STYLE_THIN]: {
+    src: 'hands/thin.png',
+    width: () => Math.max(4, Math.round(W * 0.011)),
+    length: () => Math.round(R * 0.86),
+  },
+  [STYLE_SOLID]: {
+    src: 'hands/solid.png',
+    width: () => Math.round(W * 0.0275),
+    length: () => Math.round(R * 0.86),
+  },
+  [STYLE_ORIG]: {
+    src: 'hands/original.png',
+    width: () => Math.round(W * 0.025),
+    length: () => Math.round(R * 0.62),
+  },
+}
 const BG_EDIT_ID = 101
 const STYLE_EDIT_ID = 120
 
@@ -345,30 +365,30 @@ WatchFace({
           title_en: 'Thin', title_sc: 'Thin', title_tc: 'Thin' },
         { type: STYLE_SOLID, preview: 'stylesel/style_solid.png',
           title_en: 'Solid', title_sc: 'Solid', title_tc: 'Solid' },
+        { type: STYLE_ORIG, preview: 'stylesel/style_original.png',
+          title_en: 'White', title_sc: 'White', title_tc: 'White' },
       ],
-      count: 2,
+      count: 3,
       tips_BG: 'mask/tips.png', tips_x: -16, tips_y: -40, tips_width: 124,
     })
     let style = STYLE_THIN
     try {
-      if (this.styleGroup.getProperty(prop.CURRENT_TYPE) === STYLE_SOLID) {
-        style = STYLE_SOLID
-      }
+      const t = this.styleGroup.getProperty(prop.CURRENT_TYPE)
+      if (HAND_STYLES[t]) style = t
     } catch (e) {}
     // Compact square rotation area centered on the hub, image anchored
     // with its bottom at the area center — the exact geometry proven by
     // the rotated sun-arc dot in Textwatch Italiano.
-    const handW = style === STYLE_SOLID
-      ? Math.round(W * 0.0275)
-      : Math.max(4, Math.round(W * 0.011))
-    const handLen = Math.round(R * 0.86)
+    const conf = HAND_STYLES[style]
+    const handW = conf.width()
+    const handLen = conf.length()
     this.hand = createWidget(widget.IMG, {
       x: Math.round(CX - handLen), y: Math.round(CY - handLen),
       w: handLen * 2, h: handLen * 2,
       pos_x: handLen - Math.round(handW / 2), pos_y: 0,
       center_x: handLen, center_y: handLen,
       angle: 0,
-      src: style === STYLE_SOLID ? 'hands/solid.png' : 'hands/thin.png',
+      src: conf.src,
       show_level: show_level.ONLY_NORMAL,
     })
 

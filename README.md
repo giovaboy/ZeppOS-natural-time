@@ -37,8 +37,9 @@ originale.
 
 ## Personalizzazione (long-press sul quadrante)
 
-- **Lancetta**: sottile (default) o piena, in ambra come il sole
-  (immagini per-target in `assets/<t>/hands/`).
+- **Lancetta**: sottile (default) o piena in ambra, oppure bianca col
+  design dell'orologio originale — barra uniforme con punte arrotondate,
+  più corta (immagini per-target in `assets/<t>/hands/`).
 - **Sfondo**: Nero, Nero con i gradi naturali ai punti cardinali
   (0 in basso, 90 a sinistra, 180 in alto, 270 a destra), Notte, Cosmo,
   Antracite. Tutti generabili con `python3 tools/gen_assets.py`.
