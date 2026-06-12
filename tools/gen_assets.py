@@ -173,9 +173,11 @@ def gen_hand(res, style):
 
 def gen_style_preview(res, kind):
     """Full-resolution 'real' preview for the style selector: the hand
-    exactly as rendered on the dial (size, color, baked hub), at 45°."""
+    exactly as rendered on the dial (size, color, baked hub), at 45°.
+    Transparent background, so the selected watchface background stays
+    visible underneath in the editor."""
     s = res * SS
-    im = Image.new('RGBA', (s, s), (10, 10, 12, 255))
+    im = Image.new('RGBA', (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     cx = cy = s / 2
     length = hand_length(res, kind) * SS
