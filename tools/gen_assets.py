@@ -23,10 +23,6 @@ TARGETS = {
     'target-360': 360, 'target-360.r': 360,
 }
 
-WEEKDAY_COLORS = [  # natural-time week, same order as the engine
-    0xd74d40, 0xeaa945, 0xdfdd45, 0x7fc663, 0x49a2f0, 0x443cea, 0x8047eb,
-]
-
 SUN = (229, 160, 13, 255)        # 0xe5a00d
 DIM = (102, 97, 80, 255)         # 0x666150
 TEXT_DIM = (154, 144, 124, 255)  # 0x9a907c
@@ -114,7 +110,7 @@ def hand_width(res, style):
     return round(res * 0.0275)
 
 
-def gen_hand(res, style, color):
+def gen_hand(res, style):
     """Hand pointing up; height = round(R*0.86), anchor at bottom center."""
     R = res / 2
     length = round(R * 0.86)
@@ -122,7 +118,7 @@ def gen_hand(res, style, color):
     W, H = w * SS, length * SS
     im = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    c = rgb(color)
+    c = SUN
     if style == 'solid':
         tip = max(SS * 2, round(W * 0.3))
         d.polygon(
@@ -193,9 +189,8 @@ def main():
             im.save(os.path.join(base, 'bg', name))
 
         for style in ('thin', 'solid'):
-            for i, color in enumerate(WEEKDAY_COLORS, start=1):
-                gen_hand(res, style, color).save(
-                    os.path.join(base, 'hands', f'{style}_{i}.png'))
+            gen_hand(res, style).save(
+                os.path.join(base, 'hands', f'{style}.png'))
 
         for kind in ('thin', 'solid'):
             gen_style_preview(kind).save(

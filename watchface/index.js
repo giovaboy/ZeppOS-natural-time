@@ -8,7 +8,6 @@ import {
   formatDate,
   formatTime,
   formatLongitude,
-  WEEKDAY_COLORS,
 } from '../utils/natural-time'
 import { backgrounds } from './backgrounds'
 
@@ -38,9 +37,8 @@ const GOLD_HALF = 6 // degrees of rim on each side of sunrise/sunset
 const TICK_COUNT = 24 // one mark per natural hour (15 degrees)
 
 // Needle styles, selectable in the watchface editor. Custom edit types
-// live in the developer range 0x186a0+. Hand images exist in the 7
-// weekday colors per style (hands/<style>_<dayOfWeek>.png); their pixel
-// sizes match the formulas in tools/gen_assets.py.
+// live in the developer range 0x186a0+. Hand images (hands/<style>.png)
+// have pixel sizes matching the formulas in tools/gen_assets.py.
 const STYLE_BASE = 0x186a0
 const STYLE_THIN = STYLE_BASE + 1
 const STYLE_SOLID = STYLE_BASE + 2
@@ -357,16 +355,20 @@ WatchFace({
         style = STYLE_SOLID
       }
     } catch (e) {}
-    this.handPrefix = style === STYLE_SOLID ? 'hands/solid_' : 'hands/thin_'
+    // Compact square rotation area centered on the hub, image anchored
+    // with its bottom at the area center — the exact geometry proven by
+    // the rotated sun-arc dot in Textwatch Italiano.
     const handW = style === STYLE_SOLID
       ? Math.round(W * 0.0275)
       : Math.max(4, Math.round(W * 0.011))
     const handLen = Math.round(R * 0.86)
     this.hand = createWidget(widget.IMG, {
-      x: 0, y: 0, w: W, h: H,
-      pos_x: Math.round(CX - handW / 2), pos_y: Math.round(CY - handLen),
-      center_x: CX, center_y: CY, angle: 0,
-      src: this.handPrefix + '1.png',
+      x: Math.round(CX - handLen), y: Math.round(CY - handLen),
+      w: handLen * 2, h: handLen * 2,
+      pos_x: handLen - Math.round(handW / 2), pos_y: 0,
+      center_x: handLen, center_y: handLen,
+      angle: 0,
+      src: style === STYLE_SOLID ? 'hands/solid.png' : 'hands/thin.png',
       show_level: show_level.ONLY_NORMAL,
     })
 
@@ -519,7 +521,6 @@ WatchFace({
     const now = nowUtcMs()
     const nd = computeNaturalDate(now, this.longitude)
     const screen = ntToScreen(nd.time)
-    const sunColor = WEEKDAY_COLORS[(nd.dayOfWeek - 1) % 7]
 
     // Moon: position on the dial and phase via the two-circle trick — the
     // dark disc slides off the lit one away from the sun, so the lit side
@@ -550,16 +551,13 @@ WatchFace({
       })
     }
 
-    // Sun position + weekday color.
+    // Sun position.
     this.sun.setProperty(prop.MORE, {
-      center_x: sp.x, center_y: sp.y, radius: R * 0.06, color: sunColor,
+      center_x: sp.x, center_y: sp.y, radius: R * 0.06, color: SUN_COLOR,
     })
 
-    // Needle: rotate to the sun, follow the weekday color via image swap.
-    this.hand.setProperty(prop.MORE, {
-      angle: screen,
-      src: this.handPrefix + nd.dayOfWeek + '.png',
-    })
+    // Needle: rotate to the sun.
+    this.hand.setProperty(prop.MORE, { angle: screen })
 
     // Texts.
     this.timeText.setProperty(prop.MORE, { text: formatTime(nd) })
