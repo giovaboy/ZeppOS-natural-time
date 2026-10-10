@@ -46,19 +46,26 @@ originale.
 
 ## Longitudine
 
-Il tempo naturale dipende dalla longitudine. All'avvio il quadrante usa:
-1. l'ultima longitudine salvata (`localStorage`), da GPS o impostata a mano;
-2. altrimenti il meridiano centrale del fuso orario del dispositivo
-   (approssimazione di primo avvio: include l'ora legale, quindi in estate
-   in Italia mostra NT+30 invece di NT+15).
+Il tempo naturale dipende dalla longitudine. Il quadrante la ricava, in
+ordine di preferenza, da:
+1. **impostazione manuale** (tocchi sulla riga NT), che resta finché non
+   si torna in automatico;
+2. **ultima posizione nota al sistema**: `getLatitude()`/`getLongitude()`
+   letti *senza* chiamare `Geolocation.start()`, che dentro un watchface
+   manda in crash il firmware (riavvio, osservato su ZeppOS 3.x). Se c'è,
+   la latitudine GPS sostituisce anche quella derivata per i baffi;
+3. **mezzogiorno solare**: punto medio tra alba e tramonto del servizio
+   meteo, convertito in UTC e corretto con l'equazione del tempo
+   (`lon = (720 − EoT − mezzogiorno_UTC_min) / 4`); con orari al minuto
+   l'errore è ~0.25°, e l'ora legale non conta;
+4. l'ultimo valore salvato, o al primo avvio il meridiano del fuso orario.
+
+La riga mostra la fonte accanto alla zona: `NT+9 GPS`, `NT+9 sole`,
+`NT+9 man`, `NT+15 tz`.
 
 **Impostazione** — la riga `NT±x` in basso ha tre zone di tocco invisibili:
-- **sinistra / destra**: regola la zona NT di ∓1°/±1° (salvata in modo persistente);
-- **centro**: reset al meridiano del fuso orario.
-
-Niente GPS: `Geolocation.start()` dentro un watchface manda in crash il
-firmware (riavvio del dispositivo, osservato su ZeppOS 3.x), quindi la
-longitudine si imposta solo manualmente.
+- **sinistra / destra**: regola la zona NT di ∓1°/±1° (modalità manuale, persistente);
+- **centro**: torna in automatico (e chiede il permesso di posizione, se manca).
 
 ## Build
 

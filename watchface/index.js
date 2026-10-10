@@ -1,6 +1,7 @@
 import { createWidget, widget, align, text_style, prop, show_level, event } from '@zos/ui'
 import { getDeviceInfo } from '@zos/device'
-import { Time, Weather } from '@zos/sensor'
+import { queryPermission, requestPermission } from '@zos/app'
+import { Time, Weather, Geolocation, checkSensor } from '@zos/sensor'
 import { localStorage } from '@zos/storage'
 
 import {
@@ -118,7 +119,7 @@ function moonPhase(utcMs) {
   return e / 360
 }
 
-// Latitude is not available on-device (no GPS), so it is derived by
+// Without a cached GPS fix, latitude is derived by
 // inverting the sunrise equation from today's day length and the solar
 // declination. Around the equinoxes the day length barely depends on the
 // latitude, making the inversion indeterminate: there the last good value
@@ -180,15 +181,97 @@ function localCivilToUtcMs(hour, minute) {
 }
 
 // ---------------------------------------------------------------------------
-// Longitude acquisition: GPS once, cached; timezone meridian as fallback.
+// Longitude acquisition, in order of preference:
+//   1. manual NT zone (taps on the NT row), sticky until reset;
+//   2. the last fix the system already holds, read WITHOUT start():
+//      Geolocation.start() inside a watchface reboots the device;
+//   3. solar noon = midpoint of the weather sunrise/sunset;
+//   4. the last value saved by 2/3, then the timezone meridian.
 // ---------------------------------------------------------------------------
 
 const LON_KEY = 'nt_longitude'
+const LON_SRC_KEY = 'nt_longitude_src' // 'man' | 'gps' | 'sun' | 'tz'
+const GEO_PERM = 'device:os.geolocation'
 
-function saveLongitude(lon) {
+const SRC_LABEL = { man: 'man', gps: 'GPS', sun: 'sole', tz: 'tz' }
+
+function saveLongitude(lon, src) {
   try {
     localStorage.setItem(LON_KEY, String(lon))
+    localStorage.setItem(LON_SRC_KEY, src)
   } catch (e) {}
+}
+
+function loadLongitudeSource() {
+  try {
+    const v = localStorage.getItem(LON_SRC_KEY, null)
+    if (SRC_LABEL[v]) return v
+  } catch (e) {}
+  return null
+}
+
+function geoPermissionGranted() {
+  try {
+    const [status] = queryPermission({ permissions: [GEO_PERM] })
+    return status === 2
+  } catch (e) {
+    return true // permission API unavailable: let the read itself decide
+  }
+}
+
+// Last position known to the system (WGS-84 decimal degrees), or null.
+// Never calls start(): nothing is powered on, it only reads what is there.
+let geo = null
+function cachedGpsFix() {
+  try {
+    if (!geoPermissionGranted()) return null
+    if (!geo) {
+      if (typeof checkSensor === 'function' && !checkSensor(Geolocation)) return null
+      geo = new Geolocation()
+    }
+    const lat = geo.getLatitude()
+    const lon = geo.getLongitude()
+    if (typeof lat !== 'number' || typeof lon !== 'number') return null
+    if (!isFinite(lat) || !isFinite(lon)) return null
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null
+    if (lat === 0 && lon === 0) return null // "no fix" placeholder
+    return { lat, lon }
+  } catch (e) {
+    return null
+  }
+}
+
+// Longitude from solar noon: the sun culminates halfway between sunrise
+// and sunset, at 12:00 - EoT - lon/15 h UTC. Weather times are whole
+// minutes, so the result is good to ~0.25 deg; the equation-of-time fit
+// is accurate to well under a minute.
+function solarNoonLongitude(rise, set) {
+  const riseMs = localCivilToUtcMs(rise.hour, rise.minute)
+  const setMs = localCivilToUtcMs(set.hour, set.minute)
+  if (setMs <= riseMs) return null // polar day/night: no usable midpoint
+  const B = (2 * Math.PI * (dayOfYearGregorian() - 81)) / 365
+  const eot = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B)
+  const noonMin = ((((riseMs + setMs) / 2) % 86400000) + 86400000) % 86400000 / 60000
+  let lon = (720 - eot - noonMin) / 4
+  if (lon > 180) lon -= 360
+  if (lon < -180) lon += 360
+  return Math.round(lon * 10) / 10
+}
+
+// Today's sunrise/sunset from the weather service, or null.
+function todaySun(weather) {
+  try {
+    // Proven on device as getForecast(); typings say getForecastWeather().
+    const fc = weather.getForecast
+      ? weather.getForecast()
+      : weather.getForecastWeather()
+    const td = fc && fc.tideData
+    if (td && td.count) {
+      const d0 = td.data[0]
+      if (d0 && d0.sunrise && d0.sunset) return d0
+    }
+  } catch (e) {}
+  return null
 }
 
 function loadLongitude() {
@@ -232,20 +315,54 @@ WatchFace({
 
   build() {
     this.longitude = loadLongitude()
-    if (this.longitude === null) this.longitude = timezoneLongitude()
+    this.lonSource = loadLongitudeSource() || 'tz'
+    if (this.longitude === null) {
+      this.longitude = timezoneLongitude()
+      this.lonSource = 'tz'
+    }
+    this.gpsLat = null
 
     this.weather = new Weather()
     this.sunKey = null
 
     this.buildDial()
-    this.render()
-    this.updateSunArcs()
+    this.refresh()
 
     timeSensor.onPerMinute(() => this.render())
     timeSensor.onPerDay(() => {
       this.sunKey = null
-      this.updateSunArcs()
+      this.refresh()
     })
+  },
+
+  // Re-reads position and sun times, then repaints everything.
+  refresh() {
+    const day = todaySun(this.weather)
+    this.updateLocation(day)
+    this.render()
+    this.updateSunArcs(day)
+  },
+
+  // Applies the acquisition order described above LON_KEY. The GPS
+  // latitude, when present, also feeds the whiskers in manual mode.
+  updateLocation(day) {
+    const fix = cachedGpsFix()
+    this.gpsLat = fix ? fix.lat : null
+    if (this.lonSource === 'man') return
+    if (fix) {
+      this.setLongitude(fix.lon, 'gps')
+      return
+    }
+    const lon = day ? solarNoonLongitude(day.sunrise, day.sunset) : null
+    if (lon !== null) this.setLongitude(lon, 'sun')
+    // else keep the last saved value (or the timezone meridian).
+  },
+
+  setLongitude(lon, src) {
+    if (lon === this.longitude && src === this.lonSource) return
+    this.longitude = lon
+    this.lonSource = src
+    saveLongitude(lon, src)
   },
 
   // Static layer (built once) + dynamic widgets we later move/recolor.
@@ -419,9 +536,7 @@ WatchFace({
     })
 
     // Invisible tap zones on the longitude row: left = -1 degree,
-    // right = +1 degree, center = reset to the timezone meridian.
-    // No GPS: Geolocation.start() inside a watchface hard-crashes the
-    // firmware (device reboot, observed on ZeppOS 3.x).
+    // right = +1 degree (manual mode), center = back to automatic.
     const rowY = CY + R * 0.22
     const rowH = R * 0.22
     const mkTap = (x, w, fn) => {
@@ -436,52 +551,47 @@ WatchFace({
 
     // Re-render on wake; weather data may have synced in the meantime.
     createWidget(widget.WIDGET_DELEGATE, {
-      resume_call: () => {
-        this.render()
-        this.updateSunArcs()
-      },
+      resume_call: () => this.refresh(),
       pause_call: () => {},
     })
   },
 
-  // Manual NT-zone adjustment, persisted.
+  // Manual NT-zone adjustment, persisted; sticky until the center tap.
   nudgeLongitude(delta) {
     let lon = Math.trunc(this.longitude) + delta
     if (lon > 180) lon = 180
     if (lon < -180) lon = -180
-    this.longitude = lon
-    saveLongitude(lon)
+    this.setLongitude(lon, 'man')
     this.render()
-    this.updateSunArcs()
+    this.updateSunArcs(todaySun(this.weather))
   },
 
+  // Back to automatic: timezone meridian as a placeholder, then GPS fix or
+  // solar noon. The location permission is requested here, on an explicit
+  // tap only, so that the cached fix becomes readable.
   resetLongitude() {
-    this.longitude = timezoneLongitude()
-    saveLongitude(this.longitude)
-    this.render()
-    this.updateSunArcs()
+    this.setLongitude(timezoneLongitude(), 'tz')
+    this.refresh()
+    if (geoPermissionGranted()) return
+    try {
+      requestPermission({
+        permissions: [GEO_PERM],
+        callback: (result) => {
+          if (result && result[0] === 2) this.refresh()
+        },
+      })
+    } catch (e) {}
   },
 
   // Paints the daylight arc and the golden sunrise/sunset segments on the
   // rim, converting today's civil sunrise/sunset to natural degrees.
-  updateSunArcs() {
-    let day = null
-    try {
-      // Proven on device as getForecast(); typings say getForecastWeather().
-      const fc = this.weather.getForecast
-        ? this.weather.getForecast()
-        : this.weather.getForecastWeather()
-      const td = fc && fc.tideData
-      if (td && td.count) {
-        const d0 = td.data[0]
-        if (d0 && d0.sunrise && d0.sunset) day = d0
-      }
-    } catch (e) {}
+  updateSunArcs(day) {
     if (!day) return
 
     const riseMins = day.sunrise.hour * 60 + day.sunrise.minute
     const setMins = day.sunset.hour * 60 + day.sunset.minute
-    const key = riseMins + '/' + setMins + '/' + Math.trunc(this.longitude)
+    const key = riseMins + '/' + setMins + '/' + Math.trunc(this.longitude) +
+      '/' + this.gpsLat
     if (key === this.sunKey) return
     this.sunKey = key
 
@@ -508,10 +618,12 @@ WatchFace({
       Object.assign({ color: GOLD_RIM }, arcProps(a2 - GOLD_HALF, a2 + GOLD_HALF)))
 
     // Whiskers: the seasonal envelope — sunrise/sunset at the summer and
-    // winter solstices for the derived latitude (the X is symmetric about
-    // the equinox axis since the two half-day arcs always sum to 180°).
+    // winter solstices for the GPS or derived latitude (the X is symmetric
+    // about the equinox axis since the two half-day arcs always sum to 180°).
     const dayMins = setMins >= riseMins ? setMins - riseMins : 1440 - riseMins + setMins
-    const phi = deriveLatitude(dayMins, dayOfYearGregorian())
+    const phi = this.gpsLat !== null
+      ? this.gpsLat
+      : deriveLatitude(dayMins, dayOfYearGregorian())
     const hS = solsticeHalfDay(phi, 23.44)
     const hW = solsticeHalfDay(phi, -23.44)
     const angles = [
@@ -577,7 +689,7 @@ WatchFace({
     this.timeText.setProperty(prop.MORE, { text: formatTime(nd) })
     this.dateText.setProperty(prop.MORE, { text: formatDate(nd) })
     this.lonText.setProperty(prop.MORE, {
-      text: formatLongitude(nd.effectiveLongitude),
+      text: formatLongitude(nd.effectiveLongitude) + ' ' + SRC_LABEL[this.lonSource],
     })
   },
 
