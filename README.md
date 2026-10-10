@@ -50,22 +50,22 @@ Il tempo naturale dipende dalla longitudine. Il quadrante la ricava, in
 ordine di preferenza, da:
 1. **impostazione manuale** (tocchi sulla riga NT), che resta finché non
    si torna in automatico;
-2. **ultima posizione nota al sistema**: `getLatitude()`/`getLongitude()`
-   letti *senza* chiamare `Geolocation.start()`, che dentro un watchface
-   manda in crash il firmware (riavvio, osservato su ZeppOS 3.x). Se c'è,
-   la latitudine GPS sostituisce anche quella derivata per i baffi;
-3. **mezzogiorno solare**: punto medio tra alba e tramonto del servizio
+2. **mezzogiorno solare**: punto medio tra alba e tramonto del servizio
    meteo, convertito in UTC e corretto con l'equazione del tempo
    (`lon = (720 − EoT − mezzogiorno_UTC_min) / 4`); con orari al minuto
    l'errore è ~0.25°, e l'ora legale non conta;
-4. l'ultimo valore salvato, o al primo avvio il meridiano del fuso orario.
+3. l'ultimo valore salvato, o al primo avvio il meridiano del fuso orario.
 
-La riga mostra la fonte accanto alla zona: `NT+9 GPS`, `NT+9 sole`,
-`NT+9 man`, `NT+15 tz`.
+La riga mostra la fonte accanto alla zona: `NT+9 sole`, `NT+9 man`,
+`NT+15 tz`.
 
 **Impostazione** — la riga `NT±x` in basso ha tre zone di tocco invisibili:
 - **sinistra / destra**: regola la zona NT di ∓1°/±1° (modalità manuale, persistente);
-- **centro**: torna in automatico (e chiede il permesso di posizione, se manca).
+- **centro**: torna in automatico.
+
+Niente GPS: `Geolocation.start()` dentro un watchface manda in crash il
+firmware (riavvio, osservato su ZeppOS 3.x), e `getLatitude()`/
+`getLongitude()` senza `start()` non restituiscono nulla di utilizzabile.
 
 ## Build
 
